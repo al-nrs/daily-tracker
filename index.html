@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Daily Tracker</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --card: #1a1a1a;
+    --border: #2a2a2a;
+    --text: #e5e5e5;
+    --muted: #888;
+    --accent: #3b82f6;
+    --green: #22c55e;
+    --amber: #f59e0b;
+    --red: #ef4444;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh; padding: 16px; padding-top: env(safe-area-inset-top, 16px);
+    padding-bottom: calc(env(safe-area-inset-bottom, 16px) + 80px);
+  }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+    background: var(--red); margin-right: 6px;
+  }
+  .status-dot.connected { background: var(--green); }
+  .header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 20px; padding: 0 4px;
+  }
+  .header h1 { font-size: 22px; font-weight: 700; }
+  .header .status { font-size: 11px; color: var(--muted); display: flex; align-items: center; }
+  .date-nav {
+    display: flex; align-items: center; justify-content: center;
+    gap: 16px; margin-bottom: 20px;
+  }
+  .date-nav button {
+    background: var(--card); border: 1px solid var(--border); color: var(--text);
+    width: 40px; height: 40px; border-radius: 50%; font-size: 18px;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+  }
+  .date-label { font-size: 16px; font-weight: 600; min-width: 120px; text-align: center; }
+
+  .section { margin-bottom: 20px; }
+  .section-title {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 1.5px; color: var(--muted); margin-bottom: 10px; padding-left: 4px;
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 16px; margin-bottom: 10px;
+  }
+  .counter-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 0; border-bottom: 1px solid var(--border);
+  }
+  .counter-row:last-child { border-bottom: none; }
+  .counter-label { font-size: 16px; font-weight: 500; }
+  .counter-controls { display: flex; align-items: center; gap: 12px; }
+  .counter-btn {
+    background: var(--border); border: none; color: var(--text);
+    width: 44px; height: 44px; border-radius: 12px; font-size: 22px;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    font-weight: 300;
+  }
+  .counter-btn:active { background: var(--accent); }
+  .counter-value {
+    font-size: 20px; font-weight: 700; min-width: 40px; text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .toggle-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 0; border-bottom: 1px solid var(--border);
+  }
+  .toggle-row:last-child { border-bottom: none; }
+  .toggle-label { font-size: 16px; font-weight: 500; flex: 1; }
+  .toggle-btn {
+    width: 52px; height: 32px; border-radius: 16px; border: none;
+    background: var(--border); position: relative; cursor: pointer;
+    transition: background 0.2s;
+  }
+  .toggle-btn.on { background: var(--green); }
+  .toggle-btn::after {
+    content: ''; position: absolute; top: 3px; left: 3px;
+    width: 26px; height: 26px; border-radius: 13px;
+    background: white; transition: transform 0.2s;
+  }
+  .toggle-btn.on::after { transform: translateX(20px); }
+
+  .week-bar { display: flex; gap: 6px; justify-content: space-between; }
+  .day-col { flex: 1; text-align: center; cursor: pointer; }
+  .day-col .day-label { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+  .day-col .day-dot {
+    width: 100%; aspect-ratio: 1; border-radius: 10px;
+    background: var(--border); display: flex; align-items: center;
+    justify-content: center; font-size: 12px; font-weight: 600;
+  }
+  .day-col .day-dot.has-data { background: var(--green); color: #000; }
+  .day-col .day-dot.today { border: 2px solid var(--accent); }
+  .day-col .day-dot.partial { background: var(--amber); color: #000; }
+
+  .summary-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .summary-item {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px; text-align: center;
+  }
+  .summary-item .value { font-size: 28px; font-weight: 700; }
+  .summary-item .label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  .notes-input {
+    width: 100%; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 10px; color: var(--text); padding: 12px;
+    font-size: 15px; font-family: inherit; resize: none; min-height: 60px;
+  }
+  .notes-input::placeholder { color: #555; }
+
+  .save-indicator {
+    position: fixed; top: 12px; right: 16px;
+    background: var(--green); color: #000; padding: 6px 14px;
+    border-radius: 20px; font-size: 13px; font-weight: 600;
+    opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 100;
+  }
+  .save-indicator.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="save-indicator" id="saveIndicator">Saved</div>
+
+<div class="header">
+  <h1>Daily Tracker</h1>
+  <div class="status" id="connStatus"><span class="status-dot" id="statusDot"></span><span id="statusText">Local</span></div>
+</div>
+
+<div class="date-nav">
+  <button onclick="changeDay(-1)">&lt;</button>
+  <div class="date-label" id="dateLabel"></div>
+  <button onclick="changeDay(1)">&gt;</button>
+</div>
+
+<div class="section">
+  <div class="section-title">Health</div>
+  <div class="card">
+    <div class="counter-row">
+      <span class="counter-label">Pushups</span>
+      <div class="counter-controls">
+        <button class="counter-btn" onclick="adjust('pushups',-10)">-</button>
+        <span class="counter-value" id="val-pushups">0</span>
+        <button class="counter-btn" onclick="adjust('pushups',10)">+</button>
+      </div>
+    </div>
+    <div class="counter-row">
+      <span class="counter-label">Stairs</span>
+      <div class="counter-controls">
+        <button class="counter-btn" onclick="adjust('stairs',-1)">-</button>
+        <span class="counter-value" id="val-stairs">0</span>
+        <button class="counter-btn" onclick="adjust('stairs',1)">+</button>
+      </div>
+    </div>
+    <div class="counter-row">
+      <span class="counter-label">Miles</span>
+      <div class="counter-controls">
+        <button class="counter-btn" onclick="adjust('miles',-0.5)">-</button>
+        <span class="counter-value" id="val-miles">0</span>
+        <button class="counter-btn" onclick="adjust('miles',0.5)">+</button>
+      </div>
+    </div>
+    <div class="toggle-row">
+      <span class="toggle-label">Slept 7+ hours</span>
+      <button class="toggle-btn" id="toggle-sleep" onclick="toggle('sleep')"></button>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Family</div>
+  <div class="card">
+    <div class="toggle-row">
+      <span class="toggle-label">Date night</span>
+      <button class="toggle-btn" id="toggle-datenight" onclick="toggle('datenight')"></button>
+    </div>
+    <div class="toggle-row">
+      <span class="toggle-label">Family time</span>
+      <button class="toggle-btn" id="toggle-familytime" onclick="toggle('familytime')"></button>
+    </div>
+    <div class="toggle-row">
+      <span class="toggle-label">1:1 kid time</span>
+      <button class="toggle-btn" id="toggle-kidtime" onclick="toggle('kidtime')"></button>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Mind</div>
+  <div class="card">
+    <div class="counter-row">
+      <span class="counter-label">Energy</span>
+      <div class="counter-controls">
+        <button class="counter-btn" onclick="adjust('energy',-1)">-</button>
+        <span class="counter-value" id="val-energy">5</span>
+        <button class="counter-btn" onclick="adjust('energy',1)">+</button>
+      </div>
+    </div>
+    <div class="toggle-row">
+      <span class="toggle-label">Non-work activity</span>
+      <button class="toggle-btn" id="toggle-nonwork" onclick="toggle('nonwork')"></button>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Notes</div>
+  <textarea class="notes-input" id="notes" placeholder="Quick win, reflection, anything..." oninput="debounceSave()"></textarea>
+</div>
+
+<div class="section">
+  <div class="section-title">This Week</div>
+  <div class="card">
+    <div class="week-bar" id="weekBar"></div>
+  </div>
+  <div style="height: 12px"></div>
+  <div class="summary-grid" id="weekSummary"></div>
+</div>
+
+<script>
+const SERVER_URL = 'http://192.168.5.100:8747';
+const LOCAL_KEY = 'al-tracker-offline';
+let currentDate = new Date();
+let dayData = {};
+let saveTimer = null;
+let isConnected = false;
+
+var memoryStore = {};
+var storageAvailable = false;
+try { localStorage.setItem('_test', '1'); localStorage.removeItem('_test'); storageAvailable = true; } catch(e) {}
+
+function getLocalStore() {
+  if (!storageAvailable) return memoryStore;
+  try { return JSON.parse(localStorage.getItem(LOCAL_KEY) || '{}'); } catch(e) { return memoryStore; }
+}
+function saveLocalStore(store) {
+  if (storageAvailable) {
+    try { localStorage.setItem(LOCAL_KEY, JSON.stringify(store)); } catch(e) { memoryStore = store; }
+  } else {
+    memoryStore = store;
+  }
+}
+function saveLocalDay(dateStr, data) {
+  const store = getLocalStore();
+  store[dateStr] = { ...data, _dirty: true, _ts: Date.now() };
+  saveLocalStore(store);
+}
+function saveLocalDayClean(dateStr, data) {
+  const store = getLocalStore();
+  store[dateStr] = { ...data, _dirty: false, _ts: Date.now() };
+  saveLocalStore(store);
+}
+function getLocalDay(dateStr) {
+  const store = getLocalStore();
+  return store[dateStr] || null;
+}
+function getLocalWeek(mondayDate) {
+  const store = getLocalStore();
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const dt = new Date(mondayDate);
+    dt.setDate(mondayDate.getDate() + i);
+    const key = dateKey(dt);
+    if (store[key]) days.push({ date: key, ...store[key] });
+  }
+  return days;
+}
+
+async function syncToServer() {
+  if (!isConnected) return 0;
+  const store = getLocalStore();
+  let synced = 0;
+  for (const [dateStr, entry] of Object.entries(store)) {
+    if (entry._dirty) {
+      try {
+        const clean = { ...entry };
+        delete clean._dirty; delete clean._ts;
+        await serverPost('/api/log', { date: dateStr, ...clean });
+        store[dateStr]._dirty = false;
+        synced++;
+      } catch(e) {}
+    }
+  }
+  if (synced > 0) {
+    saveLocalStore(store);
+    console.log('Synced ' + synced + ' entries to server');
+  }
+  return synced;
+}
+
+async function syncFromServer() {
+  if (!isConnected) return;
+  try {
+    const mon = getMonday(currentDate);
+    const monKey = dateKey(mon);
+    const weekData = await serverGet('/api/week?date=' + monKey);
+    const store = getLocalStore();
+    (weekData.days || []).forEach(d => {
+      const key = d.date;
+      if (!store[key] || !store[key]._dirty) {
+        store[key] = {
+          pushups: d.pushups || 0, stairs: d.stairs || 0, miles: d.miles || 0,
+          sleep: !!d.sleep, datenight: !!d.datenight, familytime: !!d.familytime,
+          kidtime: !!d.kidtime, energy: d.energy || 5, nonwork: !!d.nonwork,
+          notes: d.notes || '', _dirty: false, _ts: Date.now()
+        };
+      }
+    });
+    saveLocalStore(store);
+  } catch(e) {}
+}
+
+function dateKey(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return y + '-' + m + '-' + day;
+}
+
+async function serverGet(path) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000);
+  try {
+    const res = await fetch(SERVER_URL + path, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!res.ok) throw new Error(res.statusText);
+    return res.json();
+  } catch(e) {
+    clearTimeout(timeout);
+    throw e;
+  }
+}
+
+async function serverPost(path, body) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000);
+  try {
+    const res = await fetch(SERVER_URL + path, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    if (!res.ok) throw new Error(res.statusText);
+    return res.json();
+  } catch(e) {
+    clearTimeout(timeout);
+    throw e;
+  }
+}
+
+async function checkConnection() {
+  try {
+    await serverGet('/api/status');
+    const wasOffline = !isConnected;
+    isConnected = true;
+    document.getElementById('statusDot').className = 'status-dot connected';
+    document.getElementById('statusText').textContent = 'Synced';
+    if (wasOffline) {
+      await syncFromServer();
+      const pushed = await syncToServer();
+      if (pushed > 0) {
+        document.getElementById('statusText').textContent = 'Synced ' + pushed;
+        setTimeout(function() { document.getElementById('statusText').textContent = 'Synced'; }, 2000);
+      }
+      loadDayFromLocal(currentDate);
+      renderDay();
+      renderWeek();
+    }
+  } catch(e) {
+    isConnected = false;
+    document.getElementById('statusDot').className = 'status-dot';
+    document.getElementById('statusText').textContent = 'Local';
+  }
+}
+
+function loadDayFromLocal(date) {
+  const key = dateKey(date);
+  const defaults = { pushups:0, stairs:0, miles:0, sleep:false, datenight:false, familytime:false, kidtime:false, energy:5, nonwork:false, notes:'' };
+  const local = getLocalDay(key);
+  if (local) {
+    dayData = {
+      pushups: local.pushups || 0, stairs: local.stairs || 0, miles: local.miles || 0,
+      sleep: !!local.sleep, datenight: !!local.datenight, familytime: !!local.familytime,
+      kidtime: !!local.kidtime, energy: local.energy || 5, nonwork: !!local.nonwork, notes: local.notes || ''
+    };
+  } else {
+    dayData = { ...defaults };
+  }
+}
+
+async function loadDay(date) {
+  loadDayFromLocal(date);
+  if (isConnected) {
+    try {
+      const key = dateKey(date);
+      const d = await serverGet('/api/day?date=' + key);
+      const local = getLocalDay(key);
+      if (!local || !local._dirty) {
+        dayData = {
+          pushups: d.pushups || 0, stairs: d.stairs || 0, miles: d.miles || 0,
+          sleep: !!d.sleep, datenight: !!d.datenight, familytime: !!d.familytime,
+          kidtime: !!d.kidtime, energy: d.energy || 5, nonwork: !!d.nonwork, notes: d.notes || ''
+        };
+        saveLocalDayClean(key, dayData);
+      }
+    } catch(e) {
+      isConnected = false;
+      document.getElementById('statusDot').className = 'status-dot';
+      document.getElementById('statusText').textContent = 'Local';
+    }
+  }
+}
+
+async function saveData() {
+  const key = dateKey(currentDate);
+  saveLocalDay(key, dayData);
+  showSaved();
+  if (isConnected) {
+    try {
+      const payload = {
+        date: key, pushups: dayData.pushups, stairs: dayData.stairs, miles: dayData.miles,
+        sleep: dayData.sleep, datenight: dayData.datenight, familytime: dayData.familytime,
+        kidtime: dayData.kidtime, energy: dayData.energy, nonwork: dayData.nonwork, notes: dayData.notes
+      };
+      await serverPost('/api/log', payload);
+      saveLocalDayClean(key, dayData);
+    } catch(e) {
+      isConnected = false;
+      document.getElementById('statusDot').className = 'status-dot';
+      document.getElementById('statusText').textContent = 'Local';
+    }
+  }
+}
+
+function showSaved() {
+  const el = document.getElementById('saveIndicator');
+  el.textContent = isConnected ? 'Saved' : 'Saved locally';
+  el.classList.add('show');
+  setTimeout(function() { el.classList.remove('show'); }, 1200);
+}
+
+function debounceSave() {
+  dayData.notes = document.getElementById('notes').value;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveData, 800);
+}
+
+function renderDay() {
+  var today = new Date();
+  var isToday = dateKey(today) === dateKey(currentDate);
+  var opts = { weekday:'short', month:'short', day:'numeric' };
+  document.getElementById('dateLabel').textContent = isToday ? 'Today' : currentDate.toLocaleDateString('en-US', opts);
+
+  document.getElementById('val-pushups').textContent = dayData.pushups;
+  document.getElementById('val-stairs').textContent = dayData.stairs;
+  document.getElementById('val-miles').textContent = dayData.miles;
+  document.getElementById('val-energy').textContent = dayData.energy;
+
+  ['sleep','datenight','familytime','kidtime','nonwork'].forEach(function(t) {
+    var el = document.getElementById('toggle-' + t);
+    if (el) el.className = 'toggle-btn' + (dayData[t] ? ' on' : '');
+  });
+
+  document.getElementById('notes').value = dayData.notes || '';
+}
+
+function renderWeek() {
+  var mon = getMonday(currentDate);
+  var localDays = getLocalWeek(mon);
+  var dayMap = {};
+  localDays.forEach(function(d) { dayMap[d.date] = d; });
+
+  var dayLabels = ['M','T','W','T','F','S','S'];
+  var today = dateKey(new Date());
+  var html = '';
+  var wp = 0, ws = 0, wm = 0, sc = 0, fc = 0, eSum = 0, eCount = 0;
+
+  for (var i = 0; i < 7; i++) {
+    var dt = new Date(mon);
+    dt.setDate(mon.getDate() + i);
+    var key = dateKey(dt);
+    var d = dayMap[key];
+    var isToday = key === today;
+
+    var cls = '';
+    if (d) {
+      var fields = (d.pushups > 0 ? 1 : 0) + (d.stairs > 0 ? 1 : 0) + (d.miles > 0 ? 1 : 0) + (d.sleep ? 1 : 0) +
+                   (d.datenight ? 1 : 0) + (d.familytime ? 1 : 0) + (d.kidtime ? 1 : 0) + (d.nonwork ? 1 : 0);
+      if (fields >= 3) cls = 'has-data';
+      else if (fields > 0) cls = 'partial';
+      wp += d.pushups || 0;
+      ws += d.stairs || 0;
+      wm += d.miles || 0;
+      sc += d.sleep ? 1 : 0;
+      fc += (d.datenight ? 1 : 0) + (d.familytime ? 1 : 0) + (d.kidtime ? 1 : 0);
+      if (d.energy > 0) { eSum += d.energy; eCount++; }
+    }
+
+    html += '<div class="day-col" onclick="jumpToDay(' + i + ')">' +
+      '<div class="day-label">' + dayLabels[i] + '</div>' +
+      '<div class="day-dot ' + cls + (isToday ? ' today' : '') + '">' + dt.getDate() + '</div></div>';
+  }
+
+  var avgE = eCount > 0 ? Math.round(eSum / eCount * 10) / 10 : '-';
+  document.getElementById('weekBar').innerHTML = html;
+  document.getElementById('weekSummary').innerHTML =
+    '<div class="summary-item"><div class="value">' + wp + '</div><div class="label">Pushups</div></div>' +
+    '<div class="summary-item"><div class="value">' + ws + '</div><div class="label">Stairs</div></div>' +
+    '<div class="summary-item"><div class="value">' + wm + '</div><div class="label">Miles</div></div>' +
+    '<div class="summary-item"><div class="value">' + sc + '/7</div><div class="label">Sleep 7+</div></div>' +
+    '<div class="summary-item"><div class="value">' + fc + '</div><div class="label">Family</div></div>' +
+    '<div class="summary-item"><div class="value">' + avgE + '/10</div><div class="label">Energy</div></div>';
+}
+
+async function adjust(field, delta) {
+  dayData[field] = Math.max(0, Math.round((dayData[field] + delta) * 10) / 10);
+  if (field === 'energy') dayData[field] = Math.min(10, Math.max(1, dayData[field]));
+  renderDay();
+  await saveData();
+  renderWeek();
+}
+
+async function toggle(field) {
+  dayData[field] = !dayData[field];
+  renderDay();
+  await saveData();
+  renderWeek();
+}
+
+async function changeDay(delta) {
+  currentDate.setDate(currentDate.getDate() + delta);
+  await loadDay(currentDate);
+  renderDay();
+  renderWeek();
+}
+
+async function jumpToDay(i) {
+  var mon = getMonday(currentDate);
+  currentDate = new Date(mon);
+  currentDate.setDate(mon.getDate() + i);
+  await loadDay(currentDate);
+  renderDay();
+  renderWeek();
+}
+
+function getMonday(d) {
+  var dt = new Date(d);
+  var day = dt.getDay();
+  var diff = dt.getDate() - day + (day === 0 ? -6 : 1);
+  dt.setDate(diff); dt.setHours(0,0,0,0);
+  return dt;
+}
+
+async function init() {
+  loadDayFromLocal(currentDate);
+  renderDay();
+  renderWeek();
+  await checkConnection();
+  await loadDay(currentDate);
+  renderDay();
+  renderWeek();
+  setInterval(async function() {
+    await checkConnection();
+  }, 30000);
+}
+
+init();
+</script>
+</body>
+</html>

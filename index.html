@@ -36,7 +36,37 @@
     margin-bottom: 20px; padding: 0 4px;
   }
   .header h1 { font-size: 22px; font-weight: 700; }
+  .header .controls { display: flex; align-items: center; gap: 12px; }
   .header .status { font-size: 11px; color: var(--muted); display: flex; align-items: center; }
+  .settings-btn {
+    background: none; border: none; color: var(--text); font-size: 20px;
+    cursor: pointer; padding: 4px; display: flex; align-items: center; justify-content: center;
+  }
+  .settings-btn:active { color: var(--accent); }
+
+  .settings-overlay {
+    display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.7); z-index: 200; align-items: center; justify-content: center;
+  }
+  .settings-overlay.show { display: flex; }
+  .settings-panel {
+    background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+    padding: 24px; width: 90%; max-width: 300px;
+  }
+  .settings-panel h2 { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+  .settings-panel input {
+    width: 100%; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 10px; color: var(--text); padding: 12px;
+    font-size: 14px; font-family: monospace; margin-bottom: 12px;
+  }
+  .settings-panel input::placeholder { color: #555; }
+  .settings-panel button {
+    width: 100%; background: var(--accent); border: none; color: #000;
+    border-radius: 10px; padding: 12px; font-weight: 600; cursor: pointer;
+    font-size: 14px;
+  }
+  .settings-panel button:active { background: #2563eb; }
+
   .date-nav {
     display: flex; align-items: center; justify-content: center;
     gap: 16px; margin-bottom: 20px;
@@ -134,9 +164,20 @@
 
 <div class="save-indicator" id="saveIndicator">Saved</div>
 
+<div class="settings-overlay" id="settingsOverlay">
+  <div class="settings-panel">
+    <h2>GitHub Setup</h2>
+    <input type="password" id="tokenInput" placeholder="GitHub token" />
+    <button onclick="saveToken()">Save Token</button>
+  </div>
+</div>
+
 <div class="header">
   <h1>Daily Tracker</h1>
-  <div class="status" id="connStatus"><span class="status-dot" id="statusDot"></span><span id="statusText">Local</span></div>
+  <div class="controls">
+    <button class="settings-btn" onclick="showSettings()" title="Settings">⚙</button>
+    <div class="status" id="connStatus"><span class="status-dot" id="statusDot"></span><span id="statusText">Local</span></div>
+  </div>
 </div>
 
 <div class="date-nav">
@@ -231,15 +272,13 @@
 
 <script>
 // --- Configuration ---
-const SERVER_URL = 'http://192.168.5.100:8747';
+const GIST_API = 'https://api.github.com/gists';
+const GIST_FILENAME = 'daily-tracker-data.json';
 const LOCAL_KEY = 'al-tracker-offline';
-// HTTPS pages cannot call HTTP servers (mixed content). When served from
-// GitHub Pages, run in pure localStorage mode with no server sync.
-const SYNC_ENABLED = (location.protocol !== 'https:');
+
 let currentDate = new Date();
 let dayData = {};
 let saveTimer = null;
-let isConnected = false;
 
 // --- localStorage (primary storage) with in-memory fallback ---
 var memoryStore = {};
@@ -283,116 +322,151 @@ function getLocalWeek(mondayDate) {
   return days;
 }
 
-// --- Sync: push dirty local entries to server ---
-async function syncToServer() {
-  if (!isConnected) return 0;
-  const store = getLocalStore();
-  let synced = 0;
-  for (const [dateStr, entry] of Object.entries(store)) {
-    if (entry._dirty) {
-      try {
-        const clean = { ...entry };
-        delete clean._dirty; delete clean._ts;
-        await serverPost('/api/log', { date: dateStr, ...clean });
-        store[dateStr]._dirty = false;
-        synced++;
-      } catch(e) { /* server unavailable, keep dirty */ }
-    }
-  }
-  if (synced > 0) {
-    saveLocalStore(store);
-    console.log('Synced ' + synced + ' entries to server');
-  }
-  return synced;
+// --- GitHub Gist Sync ---
+function getToken() {
+  return localStorage.getItem('al-tracker-token');
 }
-
-// --- Sync: pull server data into localStorage ---
-async function syncFromServer() {
-  if (!isConnected) return;
+function getGistId() {
+  return localStorage.getItem('al-tracker-gist-id');
+}
+async function createGist(token, data) {
   try {
-    const mon = getMonday(currentDate);
-    const monKey = dateKey(mon);
-    const weekData = await serverGet('/api/week?date=' + monKey);
-    const store = getLocalStore();
-    (weekData.days || []).forEach(d => {
-      const key = d.date;
-      if (!store[key] || !store[key]._dirty) {
-        store[key] = {
-          pushups: d.pushups || 0, stairs: d.stairs || 0, miles: d.miles || 0,
-          sleep: !!d.sleep, datenight: !!d.datenight, familytime: !!d.familytime,
-          kidtime: !!d.kidtime, energy: d.energy || 5, nonwork: !!d.nonwork,
-          notes: d.notes || '', _dirty: false, _ts: Date.now()
-        };
-      }
-    });
-    saveLocalStore(store);
-  } catch(e) { /* ignore */ }
-}
-
-function dateKey(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth()+1).padStart(2,'0');
-  const day = String(d.getDate()).padStart(2,'0');
-  return y + '-' + m + '-' + day;
-}
-
-// --- Server API (optional, used when reachable) ---
-async function serverGet(path) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 3000);
-  try {
-    const res = await fetch(SERVER_URL + path, { signal: controller.signal });
-    clearTimeout(timeout);
-    if (!res.ok) throw new Error(res.statusText);
-    return res.json();
-  } catch(e) {
-    clearTimeout(timeout);
-    throw e;
-  }
-}
-
-async function serverPost(path, body) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 3000);
-  try {
-    const res = await fetch(SERVER_URL + path, {
+    const res = await fetch(GIST_API, {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(body),
-      signal: controller.signal
+      headers: {
+        'Authorization': 'token ' + token,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        description: 'Daily Tracker Data',
+        public: false,
+        files: {
+          [GIST_FILENAME]: {
+            content: JSON.stringify(data)
+          }
+        }
+      })
     });
-    clearTimeout(timeout);
-    if (!res.ok) throw new Error(res.statusText);
-    return res.json();
+    if (!res.ok) throw new Error('Failed to create gist');
+    const gist = await res.json();
+    localStorage.setItem('al-tracker-gist-id', gist.id);
+    return gist.id;
   } catch(e) {
-    clearTimeout(timeout);
+    console.error('createGist error:', e);
     throw e;
   }
 }
-
-async function checkConnection() {
+async function loadFromGist() {
+  const token = getToken();
+  const gistId = getGistId();
+  if (!token || !gistId) return;
   try {
-    await serverGet('/api/status');
-    const wasOffline = !isConnected;
-    isConnected = true;
-    document.getElementById('statusDot').className = 'status-dot connected';
-    document.getElementById('statusText').textContent = 'Synced';
-    if (wasOffline) {
-      await syncFromServer();
-      const pushed = await syncToServer();
-      if (pushed > 0) {
-        document.getElementById('statusText').textContent = 'Synced ' + pushed;
-        setTimeout(function() { document.getElementById('statusText').textContent = 'Synced'; }, 2000);
+    const res = await fetch(GIST_API + '/' + gistId, {
+      headers: { 'Authorization': 'token ' + token }
+    });
+    if (!res.ok) throw new Error('Failed to load gist');
+    const gist = await res.json();
+    const fileData = gist.files[GIST_FILENAME];
+    if (!fileData) throw new Error('Missing tracker file in gist');
+    const remoteData = JSON.parse(fileData.content);
+    const store = getLocalStore();
+    for (const [dateStr, entry] of Object.entries(remoteData)) {
+      if (!store[dateStr] || !store[dateStr]._dirty) {
+        store[dateStr] = { ...entry, _dirty: false, _ts: Date.now() };
       }
-      loadDayFromLocal(currentDate);
-      renderDay();
-      renderWeek();
     }
+    saveLocalStore(store);
   } catch(e) {
-    isConnected = false;
-    document.getElementById('statusDot').className = 'status-dot';
-    document.getElementById('statusText').textContent = 'Local';
+    console.error('loadFromGist error:', e);
+    throw e;
   }
+}
+async function saveToGist() {
+  const token = getToken();
+  const gistId = getGistId();
+  if (!token || !gistId) return;
+  try {
+    const store = getLocalStore();
+    const cleanData = {};
+    for (const [dateStr, entry] of Object.entries(store)) {
+      const clean = { ...entry };
+      delete clean._dirty;
+      delete clean._ts;
+      cleanData[dateStr] = clean;
+    }
+    const res = await fetch(GIST_API + '/' + gistId, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': 'token ' + token,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        files: {
+          [GIST_FILENAME]: {
+            content: JSON.stringify(cleanData)
+          }
+        }
+      })
+    });
+    if (!res.ok) throw new Error('Failed to save to gist');
+    const store2 = getLocalStore();
+    for (const dateStr of Object.keys(store2)) {
+      store2[dateStr]._dirty = false;
+    }
+    saveLocalStore(store2);
+  } catch(e) {
+    console.error('saveToGist error:', e);
+    throw e;
+  }
+}
+async function gistSync() {
+  const token = getToken();
+  if (!token) {
+    updateStatus('local-only', 'Local Only');
+    return;
+  }
+  let gistId = getGistId();
+  try {
+    if (!gistId) {
+      const store = getLocalStore();
+      gistId = await createGist(token, store);
+    }
+    await loadFromGist();
+    await saveToGist();
+    updateStatus('connected', 'Synced');
+  } catch(e) {
+    console.error('gistSync error:', e);
+    updateStatus('error', 'Sync Error');
+  }
+}
+
+function updateStatus(state, text) {
+  const dot = document.getElementById('statusDot');
+  const textEl = document.getElementById('statusText');
+  dot.className = 'status-dot';
+  if (state === 'connected') {
+    dot.classList.add('connected');
+  } else if (state === 'local-only') {
+    dot.classList.add('local-only');
+  }
+  textEl.textContent = text;
+}
+
+// --- Settings UI ---
+function showSettings() {
+  document.getElementById('settingsOverlay').classList.add('show');
+  const token = getToken();
+  if (token) {
+    document.getElementById('tokenInput').value = token.substring(0, 8) + '...';
+  }
+}
+function saveToken() {
+  const input = document.getElementById('tokenInput').value.trim();
+  if (!input) return;
+  localStorage.setItem('al-tracker-token', input);
+  document.getElementById('settingsOverlay').classList.remove('show');
+  localStorage.removeItem('al-tracker-gist-id');
+  gistSync();
 }
 
 // --- Data Operations (localStorage-first) ---
@@ -413,51 +487,26 @@ function loadDayFromLocal(date) {
 
 async function loadDay(date) {
   loadDayFromLocal(date);
-  if (isConnected) {
-    try {
-      const key = dateKey(date);
-      const d = await serverGet('/api/day?date=' + key);
-      const local = getLocalDay(key);
-      if (!local || !local._dirty) {
-        dayData = {
-          pushups: d.pushups || 0, stairs: d.stairs || 0, miles: d.miles || 0,
-          sleep: !!d.sleep, datenight: !!d.datenight, familytime: !!d.familytime,
-          kidtime: !!d.kidtime, energy: d.energy || 5, nonwork: !!d.nonwork, notes: d.notes || ''
-        };
-        saveLocalDayClean(key, dayData);
-      }
-    } catch(e) {
-      isConnected = false;
-      document.getElementById('statusDot').className = 'status-dot';
-      document.getElementById('statusText').textContent = 'Local';
-    }
-  }
 }
 
 async function saveData() {
   const key = dateKey(currentDate);
   saveLocalDay(key, dayData);
-  showSaved();
-  if (isConnected) {
+  showSaved('Saved locally');
+  const token = getToken();
+  if (token) {
     try {
-      const payload = {
-        date: key, pushups: dayData.pushups, stairs: dayData.stairs, miles: dayData.miles,
-        sleep: dayData.sleep, datenight: dayData.datenight, familytime: dayData.familytime,
-        kidtime: dayData.kidtime, energy: dayData.energy, nonwork: dayData.nonwork, notes: dayData.notes
-      };
-      await serverPost('/api/log', payload);
-      saveLocalDayClean(key, dayData);
+      await saveToGist();
+      showSaved('Synced');
     } catch(e) {
-      isConnected = false;
-      document.getElementById('statusDot').className = 'status-dot';
-      document.getElementById('statusText').textContent = 'Local';
+      console.error('Background sync failed:', e);
     }
   }
 }
 
-function showSaved() {
+function showSaved(text) {
   const el = document.getElementById('saveIndicator');
-  el.textContent = isConnected ? 'Saved' : 'Saved locally';
+  el.textContent = text;
   el.classList.add('show');
   setTimeout(function() { el.classList.remove('show'); }, 1200);
 }
@@ -466,6 +515,13 @@ function debounceSave() {
   dayData.notes = document.getElementById('notes').value;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveData, 800);
+}
+
+function dateKey(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return y + '-' + m + '-' + day;
 }
 
 // --- Rendering ---
@@ -581,19 +637,26 @@ async function init() {
   loadDayFromLocal(currentDate);
   renderDay();
   renderWeek();
-  if (SYNC_ENABLED) {
-    await checkConnection();
+
+  let token = getToken();
+  if (!token) {
+    showSettings();
+    updateStatus('local-only', 'Setup needed');
+  }
+
+  if (token) {
+    await gistSync();
     await loadDay(currentDate);
     renderDay();
     renderWeek();
-    setInterval(async function() {
-      await checkConnection();
-    }, 30000);
-  } else {
-    // HTTPS context (GitHub Pages): show amber "Local Only" indicator
-    document.getElementById('statusDot').className = 'status-dot local-only';
-    document.getElementById('statusText').textContent = 'Local Only';
   }
+
+  setInterval(async function() {
+    const currentToken = getToken();
+    if (currentToken) {
+      await gistSync();
+    }
+  }, 60000);
 }
 
 init();

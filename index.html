@@ -30,6 +30,7 @@
     background: var(--red); margin-right: 6px;
   }
   .status-dot.connected { background: var(--green); }
+  .status-dot.local-only { background: var(--amber); }
   .header {
     display: flex; justify-content: space-between; align-items: center;
     margin-bottom: 20px; padding: 0 4px;
@@ -240,6 +241,7 @@ let dayData = {};
 let saveTimer = null;
 let isConnected = false;
 
+// --- localStorage (primary storage) with in-memory fallback ---
 var memoryStore = {};
 var storageAvailable = false;
 try { localStorage.setItem('_test', '1'); localStorage.removeItem('_test'); storageAvailable = true; } catch(e) {}
@@ -281,6 +283,7 @@ function getLocalWeek(mondayDate) {
   return days;
 }
 
+// --- Sync: push dirty local entries to server ---
 async function syncToServer() {
   if (!isConnected) return 0;
   const store = getLocalStore();
@@ -293,7 +296,7 @@ async function syncToServer() {
         await serverPost('/api/log', { date: dateStr, ...clean });
         store[dateStr]._dirty = false;
         synced++;
-      } catch(e) {}
+      } catch(e) { /* server unavailable, keep dirty */ }
     }
   }
   if (synced > 0) {
@@ -303,6 +306,7 @@ async function syncToServer() {
   return synced;
 }
 
+// --- Sync: pull server data into localStorage ---
 async function syncFromServer() {
   if (!isConnected) return;
   try {
@@ -322,7 +326,7 @@ async function syncFromServer() {
       }
     });
     saveLocalStore(store);
-  } catch(e) {}
+  } catch(e) { /* ignore */ }
 }
 
 function dateKey(d) {
@@ -332,6 +336,7 @@ function dateKey(d) {
   return y + '-' + m + '-' + day;
 }
 
+// --- Server API (optional, used when reachable) ---
 async function serverGet(path) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 3000);
@@ -390,6 +395,7 @@ async function checkConnection() {
   }
 }
 
+// --- Data Operations (localStorage-first) ---
 function loadDayFromLocal(date) {
   const key = dateKey(date);
   const defaults = { pushups:0, stairs:0, miles:0, sleep:false, datenight:false, familytime:false, kidtime:false, energy:5, nonwork:false, notes:'' };
@@ -462,6 +468,7 @@ function debounceSave() {
   saveTimer = setTimeout(saveData, 800);
 }
 
+// --- Rendering ---
 function renderDay() {
   var today = new Date();
   var isToday = dateKey(today) === dateKey(currentDate);
@@ -529,6 +536,7 @@ function renderWeek() {
     '<div class="summary-item"><div class="value">' + avgE + '/10</div><div class="label">Energy</div></div>';
 }
 
+// --- Actions ---
 async function adjust(field, delta) {
   dayData[field] = Math.max(0, Math.round((dayData[field] + delta) * 10) / 10);
   if (field === 'energy') dayData[field] = Math.min(10, Math.max(1, dayData[field]));
@@ -568,6 +576,7 @@ function getMonday(d) {
   return dt;
 }
 
+// --- Init ---
 async function init() {
   loadDayFromLocal(currentDate);
   renderDay();
@@ -581,7 +590,9 @@ async function init() {
       await checkConnection();
     }, 30000);
   } else {
-    document.getElementById('connStatus').style.display = 'none';
+    // HTTPS context (GitHub Pages): show amber "Local Only" indicator
+    document.getElementById('statusDot').className = 'status-dot local-only';
+    document.getElementById('statusText').textContent = 'Local Only';
   }
 }
 

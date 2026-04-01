@@ -229,8 +229,12 @@
 </div>
 
 <script>
+// --- Configuration ---
 const SERVER_URL = 'http://192.168.5.100:8747';
 const LOCAL_KEY = 'al-tracker-offline';
+// HTTPS pages cannot call HTTP servers (mixed content). When served from
+// GitHub Pages, run in pure localStorage mode with no server sync.
+const SYNC_ENABLED = (location.protocol !== 'https:');
 let currentDate = new Date();
 let dayData = {};
 let saveTimer = null;
@@ -568,13 +572,17 @@ async function init() {
   loadDayFromLocal(currentDate);
   renderDay();
   renderWeek();
-  await checkConnection();
-  await loadDay(currentDate);
-  renderDay();
-  renderWeek();
-  setInterval(async function() {
+  if (SYNC_ENABLED) {
     await checkConnection();
-  }, 30000);
+    await loadDay(currentDate);
+    renderDay();
+    renderWeek();
+    setInterval(async function() {
+      await checkConnection();
+    }, 30000);
+  } else {
+    document.getElementById('connStatus').style.display = 'none';
+  }
 }
 
 init();

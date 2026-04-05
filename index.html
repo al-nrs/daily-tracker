@@ -419,6 +419,26 @@ async function saveToGist() {
     throw e;
   }
 }
+async function findExistingGist(token) {
+  try {
+    const res = await fetch(GIST_API, {
+      headers: { 'Authorization': 'token ' + token }
+    });
+    if (!res.ok) return null;
+    const gists = await res.json();
+    for (const g of gists) {
+      if (g.files && g.files[GIST_FILENAME]) {
+        localStorage.setItem('al-tracker-gist-id', g.id);
+        return g.id;
+      }
+    }
+    return null;
+  } catch(e) {
+    console.error('findExistingGist error:', e);
+    return null;
+  }
+}
+
 async function gistSync() {
   const token = getToken();
   if (!token) {
@@ -427,6 +447,9 @@ async function gistSync() {
   }
   let gistId = getGistId();
   try {
+    if (!gistId) {
+      gistId = await findExistingGist(token);
+    }
     if (!gistId) {
       const store = getLocalStore();
       gistId = await createGist(token, store);

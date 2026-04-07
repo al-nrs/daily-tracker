@@ -137,7 +137,7 @@
       <div class="today-item"><div class="today-value" id="t-exercise">-</div><div class="today-label">Exercise Min</div></div>
     </div>
     <div class="today-grid" style="margin-top:10px">
-      <div class="today-item"><div class="today-value" id="t-stand">-</div><div class="today-label">Stand Hrs</div></div>
+      <div class="today-item"><div class="today-value" id="t-stand">-</div><div class="today-label">Stand Min</div></div>
       <div class="today-item"></div>
       <div class="today-item"></div>
     </div>
@@ -364,12 +364,12 @@ function renderToday() {
     }
 
     // Apple Health metrics
-    if (d.steps !== undefined || d.calories !== undefined || d.exercise !== undefined || d.stand !== undefined) {
+    if (d.steps !== undefined || d.activecal !== undefined || d.exercisemin !== undefined || d.standhrs !== undefined) {
       document.getElementById('healthCard').style.display = 'block';
       document.getElementById('t-steps').textContent = d.steps != null ? Number(d.steps).toLocaleString() : '-';
-      document.getElementById('t-calories').textContent = d.calories != null ? Math.round(d.calories) : '-';
-      document.getElementById('t-exercise').textContent = d.exercise != null ? Math.round(d.exercise) : '-';
-      document.getElementById('t-stand').textContent = d.stand != null ? Math.round(d.stand) : '-';
+      document.getElementById('t-calories').textContent = d.activecal != null ? Math.round(d.activecal) : '-';
+      document.getElementById('t-exercise').textContent = d.exercisemin != null ? Math.round(d.exercisemin) : '-';
+      document.getElementById('t-stand').textContent = d.standhrs != null ? Math.round(d.standhrs) : '-';
     }
   }
 
@@ -423,9 +423,9 @@ function renderWeek() {
       dailyStairs.push(d.stairs || 0);
       dailyMiles.push(d.miles || 0);
       if (d.steps !== undefined) { wSteps += d.steps || 0; hasHealth = true; }
-      if (d.calories !== undefined) { wCal += d.calories || 0; hasHealth = true; }
-      if (d.exercise !== undefined) { wExercise += d.exercise || 0; hasHealth = true; }
-      if (d.stand !== undefined) { wStand += d.stand || 0; hasHealth = true; }
+      if (d.activecal !== undefined) { wCal += d.activecal || 0; hasHealth = true; }
+      if (d.exercisemin !== undefined) { wExercise += d.exercisemin || 0; hasHealth = true; }
+      if (d.standhrs !== undefined) { wStand += d.standhrs || 0; hasHealth = true; }
     } else {
       dailyPushups.push(0);
       dailyStairs.push(0);
@@ -448,7 +448,7 @@ function renderWeek() {
     metrics.push({ label: 'Steps', value: wSteps, target: 70000, unit: '' });
     metrics.push({ label: 'Active Cal', value: Math.round(wCal), target: 2800, unit: '' });
     metrics.push({ label: 'Exercise Min', value: Math.round(wExercise), target: 210, unit: '' });
-    metrics.push({ label: 'Stand Hrs', value: Math.round(wStand), target: 84, unit: '' });
+    metrics.push({ label: 'Stand Min', value: Math.round(wStand), target: 200, unit: '' });
   }
 
   let html = '';
@@ -556,11 +556,11 @@ function renderTrends() {
   };
 
   // Apple Health: Steps daily trend
-  var hasAnyHealth = sortedDates.some(function(k) { return allData[k].steps !== undefined; });
+  var hasAnyHealth = sortedDates.some(function(k) { return allData[k].steps !== undefined || allData[k].activecal !== undefined; });
   if (hasAnyHealth) {
-    var healthDates = sortedDates.filter(function(k) { return allData[k].steps !== undefined; });
+    var healthDates = sortedDates.filter(function(k) { return allData[k].steps !== undefined || allData[k].activecal !== undefined; });
     var stepsVals = healthDates.map(function(k) { return allData[k].steps || 0; });
-    var calVals = healthDates.map(function(k) { return Math.round(allData[k].calories || 0); });
+    var calVals = healthDates.map(function(k) { return Math.round(allData[k].activecal || 0); });
     var healthLabels = healthDates.map(function(k) {
       var dt = new Date(k + 'T12:00:00');
       return dt.toLocaleDateString('en-US', {month:'short', day:'numeric'});

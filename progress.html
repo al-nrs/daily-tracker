@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Progress — Daily Tracker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0a0a; --card: #1a1a1a; --card2: #141414; --border: #2a2a2a;
+    --text: #e5e5e5; --muted: #888; --accent: #3b82f6;
+    --green: #22c55e; --amber: #f59e0b; --red: #ef4444; --cyan: #06b6d4;
+    --purple: #a855f7; --pink: #ec4899;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh; padding: 16px; padding-top: env(safe-area-inset-top, 16px);
+    padding-bottom: calc(env(safe-area-inset-bottom, 16px) + 80px);
+  }
+
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; padding: 0 4px; }
+  .header h1 { font-size: 22px; font-weight: 700; }
+  .header .controls { display: flex; align-items: center; gap: 12px; }
+  .back-btn {
+    background: none; border: none; color: var(--accent); font-size: 14px;
+    cursor: pointer; padding: 6px 0; font-weight: 600; text-decoration: none;
+  }
+  .status { font-size: 11px; color: var(--muted); display: flex; align-items: center; }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+    background: var(--red); margin-right: 6px;
+  }
+  .status-dot.connected { background: var(--green); }
+  .status-dot.error { background: var(--red); }
+  .subtitle { font-size: 13px; color: var(--muted); margin-bottom: 20px; padding: 0 4px; }
+
+  /* Tab nav */
+  .tab-nav { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+  .tab-btn {
+    background: none; border: none; color: var(--muted); font-size: 14px; font-weight: 600;
+    padding: 10px 16px; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s;
+  }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* Cards */
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 16px; margin-bottom: 14px;
+  }
+  .card-title { font-size: 13px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+
+  /* Today card */
+  .today-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .today-item { text-align: center; }
+  .today-value { font-size: 28px; font-weight: 700; }
+  .today-label { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  /* Scorecard */
+  .score-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 0; border-bottom: 1px solid var(--border);
+  }
+  .score-row:last-child { border-bottom: none; }
+  .score-label { font-size: 14px; font-weight: 500; }
+  .score-right { display: flex; align-items: center; gap: 12px; }
+  .score-value { font-size: 16px; font-weight: 700; min-width: 60px; text-align: right; }
+  .score-target { font-size: 12px; color: var(--muted); }
+  .progress-bar { width: 60px; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
+
+  /* Streak */
+  .streak-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .streak-dot {
+    width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center;
+    justify-content: center; font-size: 10px; font-weight: 600; color: var(--muted);
+    background: var(--card2); border: 1px solid var(--border);
+  }
+  .streak-dot.filled { background: var(--green); color: #000; border-color: var(--green); }
+  .streak-dot.partial { background: var(--amber); color: #000; border-color: var(--amber); }
+  .streak-dot.today { box-shadow: 0 0 0 2px var(--accent); }
+
+  /* Chart container */
+  .chart-wrap { position: relative; height: 200px; margin-top: 8px; }
+
+  /* Notes list */
+  .note-item { padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .note-item:last-child { border-bottom: none; }
+  .note-date { font-size: 12px; color: var(--accent); font-weight: 600; }
+  .note-text { font-size: 14px; margin-top: 4px; line-height: 1.4; }
+
+  /* Empty state */
+  .empty { text-align: center; padding: 40px 20px; color: var(--muted); font-size: 14px; }
+
+  @media (max-width: 380px) {
+    .today-value { font-size: 24px; }
+    .tab-btn { padding: 10px 12px; font-size: 13px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Progress</h1>
+  <div class="controls">
+    <a href="index.html" class="back-btn">Tracker</a>
+    <div class="status"><span class="status-dot" id="statusDot"></span><span id="statusText">Loading</span></div>
+  </div>
+</div>
+<div class="subtitle" id="subtitle">Loading data...</div>
+
+<div class="tab-nav">
+  <button class="tab-btn active" onclick="switchTab('today')">Today</button>
+  <button class="tab-btn" onclick="switchTab('week')">Week</button>
+  <button class="tab-btn" onclick="switchTab('trends')">Trends</button>
+</div>
+
+<div class="tab-panel active" id="panel-today">
+  <div class="card">
+    <div class="card-title">Today's Numbers</div>
+    <div class="today-grid" id="todayGrid">
+      <div class="today-item"><div class="today-value" id="t-pushups">-</div><div class="today-label">Pushups</div></div>
+      <div class="today-item"><div class="today-value" id="t-stairs">-</div><div class="today-label">Stairs</div></div>
+      <div class="today-item"><div class="today-value" id="t-miles">-</div><div class="today-label">Miles</div></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="today-grid">
+      <div class="today-item"><div class="today-value" id="t-energy">-</div><div class="today-label">Energy</div></div>
+      <div class="today-item"><div class="today-value" id="t-sleep">-</div><div class="today-label">Sleep 7+</div></div>
+      <div class="today-item"><div class="today-value" id="t-family">-</div><div class="today-label">Family</div></div>
+    </div>
+  </div>
+  <div class="card" id="todayNotesCard" style="display:none">
+    <div class="card-title">Notes</div>
+    <div id="todayNotes" style="font-size:14px; line-height:1.5;"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">This Week Activity</div>
+    <div class="streak-row" id="weekStreak"></div>
+  </div>
+</div>
+
+<div class="tab-panel" id="panel-week">
+  <div class="card">
+    <div class="card-title">Weekly Scorecard vs Q2 Targets</div>
+    <div id="scorecardRows"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Daily Breakdown</div>
+    <div class="chart-wrap"><canvas id="chartWeekly"></canvas></div>
+  </div>
+  <div class="card" id="weekNotesCard" style="display:none">
+    <div class="card-title">Notes This Week</div>
+    <div id="weekNotes"></div>
+  </div>
+</div>
+
+<div class="tab-panel" id="panel-trends">
+  <div class="card">
+    <div class="card-title">Pushups — Weekly Totals</div>
+    <div class="chart-wrap"><canvas id="chartPushups"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Miles — Weekly Totals</div>
+    <div class="chart-wrap"><canvas id="chartMiles"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Energy — Daily</div>
+    <div class="chart-wrap"><canvas id="chartEnergy"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Sleep 7+ hrs — Weekly</div>
+    <div class="chart-wrap"><canvas id="chartSleep"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Family Engagement — Weekly</div>
+    <div class="chart-wrap"><canvas id="chartFamily"></canvas></div>
+  </div>
+</div>
+
+<script>
+// --- Config ---
+const GIST_API = 'https://api.github.com/gists';
+const GIST_FILENAME = 'daily-tracker-data.json';
+const TOKEN_KEY = 'al-tracker-token';
+const GIST_ID_KEY = 'al-tracker-gist-id';
+
+// Q2 weekly targets
+const TARGETS = {
+  pushups: 100,
+  miles: 5,
+  sleepDays: 5,
+  familyEvents: 3,
+  stairs: 50
+};
+
+let allData = {};
+let charts = {};
+
+// --- Helpers ---
+function dateKey(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return y + '-' + m + '-' + day;
+}
+
+function getMonday(d) {
+  const dt = new Date(d);
+  const day = dt.getDay();
+  const diff = dt.getDate() - day + (day === 0 ? -6 : 1);
+  dt.setDate(diff); dt.setHours(0,0,0,0);
+  return dt;
+}
+
+function getWeekDays(monday) {
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const dt = new Date(monday);
+    dt.setDate(monday.getDate() + i);
+    days.push(dateKey(dt));
+  }
+  return days;
+}
+
+function getWeekLabel(monday) {
+  const sun = new Date(monday);
+  sun.setDate(monday.getDate() + 6);
+  const mStr = monday.toLocaleDateString('en-US', {month:'short', day:'numeric'});
+  const sStr = sun.toLocaleDateString('en-US', {month:'short', day:'numeric'});
+  return mStr + ' - ' + sStr;
+}
+
+function pct(val, target) {
+  if (target <= 0) return 0;
+  return Math.min(100, Math.round(val / target * 100));
+}
+
+function barColor(p) {
+  if (p >= 80) return 'var(--green)';
+  if (p >= 40) return 'var(--amber)';
+  return 'var(--red)';
+}
+
+// --- Data Loading ---
+async function findExistingGist(token) {
+  try {
+    const res = await fetch(GIST_API, { headers: { 'Authorization': 'token ' + token } });
+    if (!res.ok) return null;
+    const gists = await res.json();
+    for (const g of gists) {
+      if (g.files && g.files[GIST_FILENAME]) {
+        localStorage.setItem(GIST_ID_KEY, g.id);
+        return g.id;
+      }
+    }
+    return null;
+  } catch(e) { return null; }
+}
+
+async function loadData() {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (!token) {
+    updateStatus('error', 'No token');
+    document.getElementById('subtitle').textContent = 'Open Tracker first and set up your GitHub token.';
+    return false;
+  }
+
+  let gistId = localStorage.getItem(GIST_ID_KEY);
+  if (!gistId) {
+    gistId = await findExistingGist(token);
+  }
+  if (!gistId) {
+    updateStatus('error', 'No data');
+    document.getElementById('subtitle').textContent = 'No tracker data found. Log some days first.';
+    return false;
+  }
+
+  try {
+    const res = await fetch(GIST_API + '/' + gistId, {
+      headers: { 'Authorization': 'token ' + token }
+    });
+    if (!res.ok) throw new Error('Gist fetch failed');
+    const gist = await res.json();
+    const fileData = gist.files[GIST_FILENAME];
+    if (!fileData) throw new Error('Missing file');
+    allData = JSON.parse(fileData.content);
+    updateStatus('connected', 'Synced');
+    return true;
+  } catch(e) {
+    console.error('loadData error:', e);
+    updateStatus('error', 'Load Error');
+    return false;
+  }
+}
+
+function updateStatus(state, text) {
+  const dot = document.getElementById('statusDot');
+  dot.className = 'status-dot' + (state === 'connected' ? ' connected' : state === 'error' ? ' error' : '');
+  document.getElementById('statusText').textContent = text;
+}
+
+// --- Tab Switching ---
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+  document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
+  document.getElementById('panel-' + name).classList.add('active');
+  event.target.classList.add('active');
+}
+
+// --- Render: Today ---
+function renderToday() {
+  const today = dateKey(new Date());
+  const d = allData[today];
+
+  if (!d) {
+    document.getElementById('t-pushups').textContent = '-';
+    document.getElementById('t-stairs').textContent = '-';
+    document.getElementById('t-miles').textContent = '-';
+    document.getElementById('t-energy').textContent = '-';
+    document.getElementById('t-sleep').textContent = '-';
+    document.getElementById('t-family').textContent = '-';
+  } else {
+    document.getElementById('t-pushups').textContent = d.pushups || 0;
+    document.getElementById('t-stairs').textContent = d.stairs || 0;
+    document.getElementById('t-miles').textContent = d.miles || 0;
+    document.getElementById('t-energy').textContent = (d.energy || 5) + '/10';
+    document.getElementById('t-sleep').textContent = d.sleep ? 'Yes' : 'No';
+    const fam = (d.datenight ? 1 : 0) + (d.familytime ? 1 : 0) + (d.kidtime ? 1 : 0);
+    document.getElementById('t-family').textContent = fam + '/3';
+    document.getElementById('t-sleep').style.color = d.sleep ? 'var(--green)' : 'var(--muted)';
+    document.getElementById('t-family').style.color = fam > 0 ? 'var(--green)' : 'var(--muted)';
+
+    if (d.notes && d.notes.trim()) {
+      document.getElementById('todayNotesCard').style.display = 'block';
+      document.getElementById('todayNotes').textContent = d.notes;
+    }
+  }
+
+  // Week streak
+  const mon = getMonday(new Date());
+  const dayLabels = ['M','T','W','T','F','S','S'];
+  const todayKey = today;
+  let html = '';
+  for (let i = 0; i < 7; i++) {
+    const dt = new Date(mon);
+    dt.setDate(mon.getDate() + i);
+    const key = dateKey(dt);
+    const entry = allData[key];
+    let cls = '';
+    if (entry) {
+      const fields = (entry.pushups > 0 ? 1 : 0) + (entry.stairs > 0 ? 1 : 0) + (entry.miles > 0 ? 1 : 0) +
+                     (entry.sleep ? 1 : 0) + (entry.datenight ? 1 : 0) + (entry.familytime ? 1 : 0) +
+                     (entry.kidtime ? 1 : 0) + (entry.nonwork ? 1 : 0);
+      if (fields >= 3) cls = 'filled';
+      else if (fields > 0) cls = 'partial';
+    }
+    if (key === todayKey) cls += ' today';
+    html += '<div class="streak-dot ' + cls + '">' + dayLabels[i] + '</div>';
+  }
+  document.getElementById('weekStreak').innerHTML = html;
+}
+
+// --- Render: Weekly Scorecard ---
+function renderWeek() {
+  const mon = getMonday(new Date());
+  const weekDays = getWeekDays(mon);
+  const weekLabel = getWeekLabel(mon);
+  document.getElementById('subtitle').textContent = 'Week of ' + weekLabel;
+
+  let wp = 0, ws = 0, wm = 0, wSleep = 0, wFamily = 0, wEnergy = 0, wECount = 0;
+  const dailyPushups = [], dailyStairs = [], dailyMiles = [], dailyLabels = [];
+  const dayAbbr = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+  weekDays.forEach(function(key, i) {
+    const d = allData[key];
+    dailyLabels.push(dayAbbr[i]);
+    if (d) {
+      wp += d.pushups || 0;
+      ws += d.stairs || 0;
+      wm += d.miles || 0;
+      wSleep += d.sleep ? 1 : 0;
+      wFamily += (d.datenight ? 1 : 0) + (d.familytime ? 1 : 0) + (d.kidtime ? 1 : 0);
+      if (d.energy > 0) { wEnergy += d.energy; wECount++; }
+      dailyPushups.push(d.pushups || 0);
+      dailyStairs.push(d.stairs || 0);
+      dailyMiles.push(d.miles || 0);
+    } else {
+      dailyPushups.push(0);
+      dailyStairs.push(0);
+      dailyMiles.push(0);
+    }
+  });
+
+  const avgE = wECount > 0 ? Math.round(wEnergy / wECount * 10) / 10 : 0;
+
+  const metrics = [
+    { label: 'Pushups', value: wp, target: TARGETS.pushups, unit: '' },
+    { label: 'Stairs', value: ws, target: TARGETS.stairs, unit: '' },
+    { label: 'Miles', value: wm, target: TARGETS.miles, unit: '' },
+    { label: 'Sleep 7+ hrs', value: wSleep, target: TARGETS.sleepDays, unit: '/7 days' },
+    { label: 'Family', value: wFamily, target: TARGETS.familyEvents, unit: ' events' },
+    { label: 'Avg Energy', value: avgE, target: 7, unit: '/10' }
+  ];
+
+  let html = '';
+  metrics.forEach(function(m) {
+    const p = pct(m.value, m.target);
+    const color = barColor(p);
+    html += '<div class="score-row">' +
+      '<div><div class="score-label">' + m.label + '</div>' +
+      '<div class="score-target">' + m.value + m.unit + ' of ' + m.target + '</div></div>' +
+      '<div class="score-right">' +
+      '<div class="progress-bar"><div class="progress-fill" style="width:' + p + '%;background:' + color + '"></div></div>' +
+      '<div class="score-value" style="color:' + color + '">' + p + '%</div>' +
+      '</div></div>';
+  });
+  document.getElementById('scorecardRows').innerHTML = html;
+
+  // Daily breakdown chart
+  if (charts.weekly) charts.weekly.destroy();
+  const ctx = document.getElementById('chartWeekly').getContext('2d');
+  charts.weekly = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: dailyLabels,
+      datasets: [
+        { label: 'Pushups', data: dailyPushups, backgroundColor: 'rgba(59,130,246,0.8)', borderRadius: 4 },
+        { label: 'Stairs', data: dailyStairs, backgroundColor: 'rgba(34,197,94,0.8)', borderRadius: 4 },
+        { label: 'Miles x10', data: dailyMiles.map(function(v){return v*10;}), backgroundColor: 'rgba(168,85,247,0.8)', borderRadius: 4 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#888', font: { size: 11 } } } },
+      scales: {
+        x: { ticks: { color: '#888' }, grid: { color: '#222' } },
+        y: { ticks: { color: '#888' }, grid: { color: '#222' } }
+      }
+    }
+  });
+
+  // Week notes
+  let notesHtml = '';
+  weekDays.forEach(function(key) {
+    const d = allData[key];
+    if (d && d.notes && d.notes.trim()) {
+      const dt = new Date(key + 'T12:00:00');
+      const label = dt.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'});
+      notesHtml += '<div class="note-item"><div class="note-date">' + label + '</div><div class="note-text">' + d.notes.trim() + '</div></div>';
+    }
+  });
+  if (notesHtml) {
+    document.getElementById('weekNotesCard').style.display = 'block';
+    document.getElementById('weekNotes').innerHTML = notesHtml;
+  }
+}
+
+// --- Render: Trends ---
+function renderTrends() {
+  const sortedDates = Object.keys(allData).sort();
+  if (sortedDates.length === 0) return;
+
+  // Group by week
+  const weeks = {};
+  sortedDates.forEach(function(key) {
+    const dt = new Date(key + 'T12:00:00');
+    const mon = getMonday(dt);
+    const wk = dateKey(mon);
+    if (!weeks[wk]) weeks[wk] = [];
+    weeks[wk].push({ date: key, data: allData[key] });
+  });
+
+  const weekKeys = Object.keys(weeks).sort();
+  const weekLabels = weekKeys.map(function(wk) {
+    const mon = new Date(wk + 'T12:00:00');
+    return mon.toLocaleDateString('en-US', {month:'short', day:'numeric'});
+  });
+
+  const weeklyPushups = [], weeklyMiles = [], weeklySleep = [], weeklyFamily = [];
+  weekKeys.forEach(function(wk) {
+    const days = weeks[wk];
+    let p = 0, m = 0, s = 0, f = 0;
+    days.forEach(function(d) {
+      p += d.data.pushups || 0;
+      m += d.data.miles || 0;
+      s += d.data.sleep ? 1 : 0;
+      f += (d.data.datenight ? 1 : 0) + (d.data.familytime ? 1 : 0) + (d.data.kidtime ? 1 : 0);
+    });
+    weeklyPushups.push(p);
+    weeklyMiles.push(m);
+    weeklySleep.push(s);
+    weeklyFamily.push(f);
+  });
+
+  const chartOpts = function(targetLine, targetLabel) {
+    return {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        annotation: targetLine ? {} : undefined
+      },
+      scales: {
+        x: { ticks: { color: '#888', font: { size: 11 } }, grid: { color: '#222' } },
+        y: { ticks: { color: '#888' }, grid: { color: '#222' }, beginAtZero: true }
+      }
+    };
+  };
+
+  // Pushups trend
+  if (charts.pushups) charts.pushups.destroy();
+  charts.pushups = new Chart(document.getElementById('chartPushups').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: weekLabels,
+      datasets: [
+        { data: weeklyPushups, backgroundColor: 'rgba(59,130,246,0.8)', borderRadius: 6 },
+        { type: 'line', data: weekLabels.map(function(){return TARGETS.pushups;}), borderColor: 'var(--amber)', borderDash: [5,5], pointRadius: 0, borderWidth: 2 }
+      ]
+    },
+    options: chartOpts()
+  });
+
+  // Miles trend
+  if (charts.miles) charts.miles.destroy();
+  charts.miles = new Chart(document.getElementById('chartMiles').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: weekLabels,
+      datasets: [
+        { data: weeklyMiles, backgroundColor: 'rgba(168,85,247,0.8)', borderRadius: 6 },
+        { type: 'line', data: weekLabels.map(function(){return TARGETS.miles;}), borderColor: 'var(--amber)', borderDash: [5,5], pointRadius: 0, borderWidth: 2 }
+      ]
+    },
+    options: chartOpts()
+  });
+
+  // Energy daily
+  const energyDates = sortedDates;
+  const energyVals = energyDates.map(function(k) { return allData[k].energy || 5; });
+  const energyLabels = energyDates.map(function(k) {
+    const dt = new Date(k + 'T12:00:00');
+    return dt.toLocaleDateString('en-US', {month:'short', day:'numeric'});
+  });
+
+  if (charts.energy) charts.energy.destroy();
+  charts.energy = new Chart(document.getElementById('chartEnergy').getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: energyLabels,
+      datasets: [{
+        data: energyVals,
+        borderColor: 'var(--cyan)',
+        backgroundColor: 'rgba(6,182,212,0.15)',
+        fill: true, tension: 0.3, pointRadius: 4, pointBackgroundColor: 'var(--cyan)', borderWidth: 2
+      }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+      scales: { x: { ticks: { color: '#888', font:{size:10} }, grid: { color:'#222' } },
+               y: { min: 1, max: 10, ticks: { color: '#888', stepSize: 1 }, grid: { color:'#222' } } } }
+  });
+
+  // Sleep weekly
+  if (charts.sleep) charts.sleep.destroy();
+  charts.sleep = new Chart(document.getElementById('chartSleep').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: weekLabels,
+      datasets: [
+        { data: weeklySleep, backgroundColor: 'rgba(34,197,94,0.8)', borderRadius: 6 },
+        { type: 'line', data: weekLabels.map(function(){return TARGETS.sleepDays;}), borderColor: 'var(--amber)', borderDash: [5,5], pointRadius: 0, borderWidth: 2 }
+      ]
+    },
+    options: chartOpts()
+  });
+
+  // Family weekly
+  if (charts.family) charts.family.destroy();
+  charts.family = new Chart(document.getElementById('chartFamily').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: weekLabels,
+      datasets: [
+        { data: weeklyFamily, backgroundColor: 'rgba(236,72,153,0.8)', borderRadius: 6 },
+        { type: 'line', data: weekLabels.map(function(){return TARGETS.familyEvents;}), borderColor: 'var(--amber)', borderDash: [5,5], pointRadius: 0, borderWidth: 2 }
+      ]
+    },
+    options: chartOpts()
+  });
+}
+
+// --- Init ---
+async function init() {
+  const ok = await loadData();
+  if (!ok) return;
+
+  const totalDays = Object.keys(allData).length;
+  document.getElementById('subtitle').textContent = totalDays + ' days tracked';
+
+  renderToday();
+  renderWeek();
+  renderTrends();
+}
+
+init();
+</script>
+</body>
+</html>

@@ -144,6 +144,23 @@
   .summary-item .value { font-size: 28px; font-weight: 700; }
   .summary-item .label { font-size: 12px; color: var(--muted); margin-top: 4px; }
 
+  .health-input-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 0; border-bottom: 1px solid var(--border);
+  }
+  .health-input-row:last-child { border-bottom: none; }
+  .health-input-label { font-size: 16px; font-weight: 500; flex: 1; }
+  .health-input-label .unit { font-size: 12px; color: var(--muted); font-weight: 400; }
+  .health-num-input {
+    width: 90px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 10px; color: var(--text); padding: 10px 12px;
+    font-size: 18px; font-weight: 600; text-align: right;
+    font-variant-numeric: tabular-nums; font-family: inherit;
+    -webkit-appearance: none;
+  }
+  .health-num-input::placeholder { color: #444; font-weight: 400; }
+  .health-num-input:focus { border-color: var(--accent); outline: none; }
+
   .notes-input {
     width: 100%; background: var(--bg); border: 1px solid var(--border);
     border-radius: 10px; color: var(--text); padding: 12px;
@@ -217,6 +234,28 @@
     <div class="toggle-row">
       <span class="toggle-label">Slept 7+ hours</span>
       <button class="toggle-btn" id="toggle-sleep" onclick="toggle('sleep')"></button>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Apple Health</div>
+  <div class="card">
+    <div class="health-input-row">
+      <span class="health-input-label">Steps</span>
+      <input type="number" class="health-num-input" id="input-steps" placeholder="--" inputmode="numeric" oninput="healthInput('steps')">
+    </div>
+    <div class="health-input-row">
+      <span class="health-input-label">Active Cal <span class="unit">kcal</span></span>
+      <input type="number" class="health-num-input" id="input-activecal" placeholder="--" inputmode="numeric" oninput="healthInput('activecal')">
+    </div>
+    <div class="health-input-row">
+      <span class="health-input-label">Exercise <span class="unit">min</span></span>
+      <input type="number" class="health-num-input" id="input-exercisemin" placeholder="--" inputmode="numeric" oninput="healthInput('exercisemin')">
+    </div>
+    <div class="health-input-row">
+      <span class="health-input-label">Stand <span class="unit">hrs</span></span>
+      <input type="number" class="health-num-input" id="input-standhrs" placeholder="--" inputmode="numeric" oninput="healthInput('standhrs')">
     </div>
   </div>
 </div>
@@ -496,13 +535,17 @@ function saveToken() {
 // --- Data Operations (localStorage-first) ---
 function loadDayFromLocal(date) {
   const key = dateKey(date);
-  const defaults = { pushups:0, stairs:0, miles:0, sleep:false, datenight:false, familytime:false, kidtime:false, energy:5, nonwork:false, notes:'' };
+  const defaults = { pushups:0, stairs:0, miles:0, sleep:false, datenight:false, familytime:false, kidtime:false, energy:5, nonwork:false, notes:'', steps:null, activecal:null, exercisemin:null, standhrs:null };
   const local = getLocalDay(key);
   if (local) {
     dayData = {
       pushups: local.pushups || 0, stairs: local.stairs || 0, miles: local.miles || 0,
       sleep: !!local.sleep, datenight: !!local.datenight, familytime: !!local.familytime,
-      kidtime: !!local.kidtime, energy: local.energy || 5, nonwork: !!local.nonwork, notes: local.notes || ''
+      kidtime: !!local.kidtime, energy: local.energy || 5, nonwork: !!local.nonwork, notes: local.notes || '',
+      steps: local.steps != null ? local.steps : null,
+      activecal: local.activecal != null ? local.activecal : null,
+      exercisemin: local.exercisemin != null ? local.exercisemin : null,
+      standhrs: local.standhrs != null ? local.standhrs : null
     };
   } else {
     dayData = { ...defaults };
@@ -566,6 +609,11 @@ function renderDay() {
   });
 
   document.getElementById('notes').value = dayData.notes || '';
+
+  ['steps','activecal','exercisemin','standhrs'].forEach(function(f) {
+    var el = document.getElementById('input-' + f);
+    if (el) el.value = dayData[f] != null ? dayData[f] : '';
+  });
 }
 
 function renderWeek() {
@@ -577,7 +625,7 @@ function renderWeek() {
   var dayLabels = ['M','T','W','T','F','S','S'];
   var today = dateKey(new Date());
   var html = '';
-  var wp = 0, ws = 0, wm = 0, sc = 0, fc = 0, eSum = 0, eCount = 0;
+  var wp = 0, ws = 0, wm = 0, sc = 0, fc = 0, eSum = 0, eCount = 0, wSteps = 0;
 
   for (var i = 0; i < 7; i++) {
     var dt = new Date(mon);
@@ -598,6 +646,7 @@ function renderWeek() {
       sc += d.sleep ? 1 : 0;
       fc += (d.datenight ? 1 : 0) + (d.familytime ? 1 : 0) + (d.kidtime ? 1 : 0);
       if (d.energy > 0) { eSum += d.energy; eCount++; }
+      wSteps += d.steps || 0;
     }
 
     html += '<div class="day-col" onclick="jumpToDay(' + i + ')">' +
@@ -607,9 +656,10 @@ function renderWeek() {
 
   var avgE = eCount > 0 ? Math.round(eSum / eCount * 10) / 10 : '-';
   document.getElementById('weekBar').innerHTML = html;
+  var stepsK = wSteps >= 1000 ? Math.round(wSteps / 1000) + 'k' : wSteps;
   document.getElementById('weekSummary').innerHTML =
+    '<div class="summary-item"><div class="value">' + stepsK + '</div><div class="label">Steps</div></div>' +
     '<div class="summary-item"><div class="value">' + wp + '</div><div class="label">Pushups</div></div>' +
-    '<div class="summary-item"><div class="value">' + ws + '</div><div class="label">Stairs</div></div>' +
     '<div class="summary-item"><div class="value">' + wm + '</div><div class="label">Miles</div></div>' +
     '<div class="summary-item"><div class="value">' + sc + '/7</div><div class="label">Sleep 7+</div></div>' +
     '<div class="summary-item"><div class="value">' + fc + '</div><div class="label">Family</div></div>' +
@@ -630,6 +680,17 @@ async function toggle(field) {
   renderDay();
   await saveData();
   renderWeek();
+}
+
+async function healthInput(field) {
+  var el = document.getElementById('input-' + field);
+  var val = el.value.trim();
+  dayData[field] = val === '' ? null : Number(val);
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async function() {
+    await saveData();
+    renderWeek();
+  }, 800);
 }
 
 async function changeDay(delta) {
